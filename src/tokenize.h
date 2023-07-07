@@ -58,6 +58,8 @@ enum token_type
     Token_BeginList,
     Token_EndList,
 
+    Token_Alias,
+
     Token_Unknown,
     Token_EndOfStream,
 };
