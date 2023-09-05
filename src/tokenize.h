@@ -3,12 +3,11 @@
 
 static const char *modifier_flags_str[] =
 {
-    "alt",   "lalt",    "ralt",
-    "shift", "lshift",  "rshift",
-    "cmd",   "lcmd",    "rcmd",
-    "ctrl",  "lctrl",   "rctrl",
-    "fn",    "hyper",   "lhyper",
-    "rhyper","meh",
+    "alt", "lalt",  "ralt",
+    "sft", "lsft",  "rsft",
+    "cmd", "lcmd",  "rcmd",
+    "ctl","lctl", "rctl",
+    "fn",
 };
 
 static const char *literal_keycode_str[] =

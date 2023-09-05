@@ -171,12 +171,12 @@ command  = command is executed through '$SHELL -c' and
 Aliases can also be used anywhere a modifier or a key is expected:
 ```
 # alias as modifier
-.alias $hyper cmd + alt + ctrl
+.alias $hyper cmd + alt + ctl
 $hyper - t : open -a Terminal.app
 
 # alias as key
 .alias $capslock 0x39
-ctrl - $capslock : open -a Notes.app
+ctl - $capslock : open -a Notes.app
 
 # alias as mod-key
 .alias $exclamation_mark shift - 1

@@ -118,12 +118,12 @@ cmd - m : open -na /Applications/mpv.app $(pbpaste)
 #  using aliases
 
 # alias as modifier
-.alias $hyper cmd + alt + ctrl
+.alias $hyper cmd + alt + ctl
 $hyper - t : open -a Terminal.app
 
 # alias as key
 .alias $capslock 0x39
-ctrl - $capslock : open -a Notes.app
+ctl - $capslock : open -a Notes.app
 
 # alias as mod-key
 .alias $exclamation_mark shift - 1
