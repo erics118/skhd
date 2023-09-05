@@ -3,6 +3,7 @@
 
 #include <spawn.h>
 #include <sys/stat.h>
+#include <libproc.h>
 
 #define MAXLEN 512
 
@@ -133,7 +134,8 @@ static char *populate_plist(int *length)
 
     char exe_path[4096];
     unsigned int exe_path_size = sizeof(exe_path);
-    if (_NSGetExecutablePath(exe_path, &exe_path_size) < 0) {
+    pid_t pid = getpid();
+    if (proc_pidpath(pid, exe_path, exe_path_size) <= 0) {
         error("skhd: unable to retrieve path of executable! abort..\n");
     }
 
