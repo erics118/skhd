@@ -47,6 +47,7 @@ enum hotkey_flag
     Hotkey_Flag_Passthrough = (1 << 13),
     Hotkey_Flag_Activate    = (1 << 14),
     Hotkey_Flag_NX          = (1 << 15),
+    Hotkey_Flag_SwitchMode    = (1 << 16),
 };
 
 #include "hashtable.h"

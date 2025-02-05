@@ -35,6 +35,7 @@ enum token_type
 {
     Token_Identifier,
     Token_Activate,
+    Token_SwitchMode,
 
     Token_Command,
     Token_Modifier,

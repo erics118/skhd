@@ -136,6 +136,30 @@ parse_activate(struct parser *parser, struct hotkey *hotkey)
     }
 }
 
+static void
+parse_switch_mode(struct parser *parser, struct hotkey *hotkey)
+{
+    struct token identifier = parser_previous(parser);
+    char *name = copy_string_count(identifier.text, identifier.length);
+    struct mode *mode = table_find(parser->mode_map, name);
+    free(name);
+
+    if (!mode) {
+        parser_report_error(parser, identifier, "undeclared mode identifier\n");
+        return;
+    }
+
+    buf_push(hotkey->command, copy_string(mode->name));
+    hotkey->flags |= Hotkey_Flag_SwitchMode;
+
+    if (!parser_match(parser, Token_Command)) {
+        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command\n");
+        return;
+    }
+
+    parse_command(parser, hotkey);
+}
+
 static uint32_t
 parse_key_hex(struct parser *parser)
 {
@@ -353,8 +377,13 @@ parse_hotkey(struct parser *parser)
         if (parser->error) {
             goto err;
         }
+    } else if (parser_match(parser, Token_SwitchMode)) {
+        parse_switch_mode(parser, hotkey);
+        if (parser->error) {
+            goto err;
+        }
     } else {
-        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command or ';' followed by mode\n");
+        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command, '%' followed by mode and command, or ';' followed by mode\n");
         goto err;
     }
 

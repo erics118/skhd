@@ -168,6 +168,9 @@ bool find_and_exec_hotkey(struct hotkey *k, struct table *t, struct mode **m, st
         if (has_flags(h, Hotkey_Flag_Activate)) {
             *m = table_find(t, cmd);
             cmd = (*m)->command;
+        } else if (has_flags(h, Hotkey_Flag_SwitchMode)) {
+            *m = table_find(t, h->command[0]);
+            cmd = h->command[1];
         } else if (buf_len(h->process_name) > 0) {
             cmd = find_process_command_mapping(h, &c, carbon);
         }

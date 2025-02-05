@@ -107,9 +107,10 @@ hotkey       = <mode> '<' <action> | <action>
 
 mode         = 'name of mode' | <mode> ',' <mode>
 
-action       = <keysym> '[' <proc_map_lst> ']' | <keysym> '->' '[' <proc_map_lst> ']'
-               <keysym> ':' <command>          | <keysym> '->' ':' <command>
-               <keysym> ';' <mode>             | <keysym> '->' ';' <mode>
+action       = <keysym> '[' <proc_map_lst> ']'   | <keysym> '->' '[' <proc_map_lst> ']'
+               <keysym> ':' <command>            | <keysym> '->' ':' <command>
+               <keysym> ';' <mode>               | <keysym> '->' ';' <mode>
+               <keysym> '%' <mode> ':' <command> | <keysym> '->' '%' <mode> ':' <command>
 
 keysym       = <mod> '-' <key> | <key>
 
@@ -144,6 +145,8 @@ command      = command is executed through '$SHELL -c' and
 *            = matches every application not specified in <proc_map_lst>
 
 ~            = application is unbound and keypress is forwarded per usual, when specified in a <proc_map>
+
+%            = after executing the command, the mode is switched to the specified mode
 ```
 
 A mode is declared according to the following rules:
