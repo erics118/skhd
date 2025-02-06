@@ -230,13 +230,23 @@ get_token(struct tokenizer *tokenizer)
     case '%': {
         eat_whitespace(tokenizer);
 
-        token.text = tokenizer->at;
-        token.line = tokenizer->line;
-        token.cursor = tokenizer->cursor;
+        if (*tokenizer->at && *tokenizer->at == ':') {
+            eat_whitespace(tokenizer);
+             token.text = tokenizer->at;
+            token.line = tokenizer->line;
+            token.cursor = tokenizer->cursor;
+            token.length = tokenizer->at - token.text;
+            token.type = Token_SwitchMode;
 
-        eat_identifier(tokenizer);
-        token.length = tokenizer->at - token.text;
-        token.type = Token_SwitchMode;
+        } else {
+            token.text = tokenizer->at;
+            token.line = tokenizer->line;
+            token.cursor = tokenizer->cursor;
+
+            eat_identifier(tokenizer);
+            token.length = tokenizer->at - token.text;
+            token.type = Token_SwitchMode;
+        }
     } break;
     default:  {
         if (c == '0' && *tokenizer->at == 'x') {

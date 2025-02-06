@@ -111,6 +111,7 @@ action       = <keysym> '[' <proc_map_lst> ']'   | <keysym> '->' '[' <proc_map_l
                <keysym> ':' <command>            | <keysym> '->' ':' <command>
                <keysym> ';' <mode>               | <keysym> '->' ';' <mode>
                <keysym> '%' <mode> ':' <command> | <keysym> '->' '%' <mode> ':' <command>
+               <keysym> '%' ':' <command>        | <keysym> '->' '%' ':' <command>
 
 keysym       = <mod> '-' <key> | <key>
 
@@ -146,7 +147,7 @@ command      = command is executed through '$SHELL -c' and
 
 ~            = application is unbound and keypress is forwarded per usual, when specified in a <proc_map>
 
-%            = after executing the command, the mode is switched to the specified mode
+%            = after executing the command, switch to the specified mode (or the default if none is specified)
 ```
 
 A mode is declared according to the following rules:

@@ -144,6 +144,10 @@ parse_switch_mode(struct parser *parser, struct hotkey *hotkey)
     struct mode *mode = table_find(parser->mode_map, name);
     free(name);
 
+    if (!identifier.length) {
+        mode = table_find(parser->mode_map, "default");
+    }
+
     if (!mode) {
         parser_report_error(parser, identifier, "undeclared mode identifier\n");
         return;
