@@ -4,7 +4,7 @@ BUILD_FLAGS    = -std=c99 -Wall -g -O0
 SKHD_SRC       = ./src/skhd.c
 BINS           = $(BUILD_PATH)/skhd
 
-.PHONY: all clean install
+.PHONY: all clean install sign
 
 all: clean $(BINS)
 
@@ -17,3 +17,6 @@ clean:
 $(BUILD_PATH)/skhd: $(SKHD_SRC)
 	mkdir -p $(BUILD_PATH)
 	clang $^ $(BUILD_FLAGS) $(FRAMEWORKS) -o $@
+
+sign:
+	codesign -fs "skhd-cert" $(BUILD_PATH)/skhd
