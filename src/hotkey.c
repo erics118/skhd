@@ -165,16 +165,21 @@ bool find_and_exec_hotkey(struct hotkey *k, struct table *t, struct mode **m, st
     uint32_t c = MODE_CAPTURE((int)(*m)->capture);
     for (struct hotkey *h = find_hotkey(*m, k, &c); h; passthrough(h, &c), h = 0) {
         char *cmd = h->command[0];
+        char *cmd2 = NULL;
         if (has_flags(h, Hotkey_Flag_Activate)) {
             *m = table_find(t, cmd);
             cmd = (*m)->command;
         } else if (has_flags(h, Hotkey_Flag_SwitchMode)) {
+            // execute user-specified command
             *m = table_find(t, h->command[0]);
             cmd = h->command[1];
+            // execute switch mode command
+            cmd2 = (*m)->command;
         } else if (buf_len(h->process_name) > 0) {
             cmd = find_process_command_mapping(h, &c, carbon);
         }
         if (cmd) fork_and_exec(cmd);
+        if (cmd2) fork_and_exec(cmd2);
     }
     return should_capture_hotkey(c);
 }
