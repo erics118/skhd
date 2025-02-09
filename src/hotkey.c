@@ -170,8 +170,8 @@ bool find_and_exec_hotkey(struct hotkey *k, struct table *t, struct mode **m, st
             *m = table_find(t, cmd);
             cmd = (*m)->command;
         } else if (has_flags(h, Hotkey_Flag_SwitchMode)) {
-            // execute user-specified command
             *m = table_find(t, h->command[0]);
+            // execute user-specified command
             cmd = h->command[1];
             // execute switch mode command
             cmd2 = (*m)->command;

@@ -447,7 +447,7 @@ static void dump_secure_keyboard_entry_process_info(void)
     }
 }
 
-static GLOBAL_CONNECTION_CALLBACK(connection_handler)
+static  __attribute__((unused)) GLOBAL_CONNECTION_CALLBACK(connection_handler) 
 {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         pid_t pid;

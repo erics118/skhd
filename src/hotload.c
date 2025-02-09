@@ -272,9 +272,12 @@ bool hotloader_begin(struct hotloader *hotloader, hotloader_callback *callback)
                                             0.5,
                                             hotloader->flags);
 
-    FSEventStreamScheduleWithRunLoop(hotloader->stream,
-                                     CFRunLoopGetMain(),
-                                     kCFRunLoopDefaultMode);
+    // FSEventStreamScheduleWithRunLoop(hotloader->stream,
+    //                                  CFRunLoopGetMain(),
+    //                                  kCFRunLoopDefaultMode);
+
+    dispatch_queue_t queue = dispatch_get_main_queue();
+    FSEventStreamSetDispatchQueue(hotloader->stream, queue);
 
     hotloader->callback = callback;
     FSEventStreamStart(hotloader->stream);
