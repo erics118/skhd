@@ -1,26 +1,22 @@
-[![Build Status](https://travis-ci.org/koekeishiya/skhd.svg?branch=master)](https://travis-ci.org/koekeishiya/skhd)
-
-**skhd** is a simple hotkey daemon for macOS. It is a stripped version of [**khd** (*no longer maintained*)](https://github.com/koekeishiya/khd)
-(although rewritten from scratch), that sacrifices the more advanced features in favour of increased responsiveness and performance.
-**skhd** is able to hotload its config file, meaning that hotkeys can be edited and updated live while **skhd** is running.
+**skhd** is a simple hotkey daemon for macOS that focuses on responsiveness and performance.
+Hotkeys are defined in a text file through a simple DSL. **skhd** is able to hotload its config file, meaning that hotkeys can be edited and updated live while **skhd** is running.
 
 **skhd** uses a pid-file to make sure that only one instance is running at any moment in time. This also allows for the ability to trigger
 a manual reload of the config file by invoking `skhd --reload` at any time while an instance of **skhd** is running. The pid-file is saved
 as `/tmp/skhd_$USER.pid` and so the user that is running **skhd** must have write permission to said path.
+When running as a service (through launchd) log files can be found at `/tmp/skhd_$USER.out.log` and `/tmp/skhd_$USER.err.log`.
 
-feature comparison between **skhd** and **khd**
+list of features
 
-| feature                    | skhd | khd |
-|:--------------------------:|:----:|:---:|
-| hotload config file        | [x]  | [ ] |
-| hotkey passthrough         | [x]  | [x] |
-| modal hotkey-system        | [x]  | [x] |
-| application specific hotkey| [x]  | [x] |
-| blacklist applications     | [x]  | [ ] |
-| use media-keys as hotkey   | [x]  | [ ] |
-| modifier only hotkey       | [ ]  | [x] |
-| caps-lock as hotkey        | [ ]  | [x] |
-| mouse-buttons as hotkey    | [ ]  | [x] |
+| feature                    | skhd |
+|:--------------------------:|:----:|
+| hotload config file        | [x]  |
+| hotkey passthrough         | [x]  |
+| modal hotkey-system        | [x]  |
+| application specific hotkey| [x]  |
+| blacklist applications     | [x]  |
+| use media-keys as hotkey   | [x]  |
+| synthesize a key-press     | [x]  |
 
 ### Install
 
@@ -35,7 +31,7 @@ After access has been granted, the application must be restarted.
 Requires xcode-8 command-line tools.
 
       brew install koekeishiya/formulae/skhd
-      brew services start skhd
+      skhd --start-service
 
 **Source**:
 
@@ -48,6 +44,21 @@ Requires xcode-8 command-line tools.
 ### Usage
 
 ```
+--install-service: Install launchd service file into ~/Library/LaunchAgents/com.koekeishiya.skhd.plist
+    skhd --install-service
+
+--uninstall-service: Remove launchd service file ~/Library/LaunchAgents/com.koekeishiya.skhd.plist
+    skhd --uninstall-service
+
+--start-service: Run skhd as a service through launchd
+    skhd --start-service
+
+--restart-service: Restart skhd service
+    skhd --restart-service
+
+--stop-service: Stop skhd service from running
+    skhd --stop-service
+
 -V | --verbose: Output debug information
     skhd -V
 
@@ -78,7 +89,13 @@ Requires xcode-8 command-line tools.
 
 ### Configuration
 
-**skhd** will load the configuration file `$HOME/.skhdrc`, unless otherwise specified.
+The default configuration file is located at one of the following places (in order):
+
+ - `$XDG_CONFIG_HOME/skhd/skhdrc`
+ - `$HOME/.config/skhd/skhdrc`
+ - `$HOME/.skhdrc`
+
+A different location can be specified with the *--config | -c* argument.
 
 A sample config is available [here](https://github.com/koekeishiya/skhd/blob/master/examples/skhdrc)
 
@@ -90,9 +107,11 @@ hotkey       = <mode> '<' <action> | <action>
 
 mode         = 'name of mode' | <mode> ',' <mode>
 
-action       = <keysym> '[' <proc_map_lst> ']' | <keysym> '->' '[' <proc_map_lst> ']'
-               <keysym> ':' <command>          | <keysym> '->' ':' <command>
-               <keysym> ';' <mode>             | <keysym> '->' ';' <mode>
+action       = <keysym> '[' <proc_map_lst> ']'   | <keysym> '->' '[' <proc_map_lst> ']'
+               <keysym> ':' <command>            | <keysym> '->' ':' <command>
+               <keysym> ';' <mode>               | <keysym> '->' ';' <mode>
+               <keysym> '%' <mode> ':' <command> | <keysym> '->' '%' <mode> ':' <command>
+               <keysym> '%' ':' <command>        | <keysym> '->' '%' ':' <command>
 
 keysym       = <mod> '-' <key> | <key>
 
@@ -127,6 +146,8 @@ command      = command is executed through '$SHELL -c' and
 *            = matches every application not specified in <proc_map_lst>
 
 ~            = application is unbound and keypress is forwarded per usual, when specified in a <proc_map>
+
+%            = after executing the command, switch to the specified mode (or the default if none is specified)
 ```
 
 A mode is declared according to the following rules:
@@ -149,6 +170,25 @@ command  = command is executed through '$SHELL -c' and
            prepend '\' at the end of the previous line.
 
            an EOL character signifies the end of the bind.
+```
+
+Aliases can also be used anywhere a modifier or a key is expected:
+```
+# alias as modifier
+.alias $hyper cmd + alt + ctl
+$hyper - t : open -a Terminal.app
+
+# alias as key
+.alias $capslock 0x39
+ctl - $capslock : open -a Notes.app
+
+# alias as mod-key
+.alias $exclamation_mark shift - 1
+$hyper - $exclamation_mark : open -a "System Preferences.app"
+
+# alias within alias
+.alias $terminal_key $hyper + shift - t
+$terminal_key : open -a Terminal.app
 ```
 
 General options that configure the behaviour of **skhd**:

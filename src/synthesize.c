@@ -5,18 +5,16 @@
 #include "parse.h"
 #include "hotkey.h"
 
-#define internal static
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated"
 
-internal inline void
+static inline void
 create_and_post_keyevent(uint16_t key, bool pressed)
 {
     CGPostKeyboardEvent((CGCharCode)0, (CGKeyCode)key, pressed);
 }
 
-internal inline void
+static inline void
 synthesize_modifiers(struct hotkey *hotkey, bool pressed)
 {
     if (has_flags(hotkey, Hotkey_Flag_Alt)) {
@@ -40,27 +38,35 @@ synthesize_modifiers(struct hotkey *hotkey, bool pressed)
     }
 }
 
-void synthesize_key(char *key_string)
+bool synthesize_key(char *key_string)
 {
-    if (!initialize_keycode_map()) return;
+    if (!initialize_keycode_map()) return false;
 
     struct parser parser;
     parser_init_text(&parser, key_string);
 
-    close(1);
-    close(2);
+    if (!verbose) {
+        close(1);
+        close(2);
+    }
 
-    struct hotkey *hotkey = parse_keypress(&parser);
-    if (!hotkey) return;
+    struct hotkey hotkey;
+    memset(&hotkey, 0, sizeof(hotkey));
+    if (!parse_keypress(&parser, &hotkey, false)) {
+        if (parser.error) {
+            return false;
+        }
+    }
 
     CGSetLocalEventsSuppressionInterval(0.0f);
     CGEnableEventStateCombining(false);
 
-    synthesize_modifiers(hotkey, true);
-    create_and_post_keyevent(hotkey->key, true);
+    synthesize_modifiers(&hotkey, true);
+    create_and_post_keyevent(hotkey.key, true);
 
-    create_and_post_keyevent(hotkey->key, false);
-    synthesize_modifiers(hotkey, false);
+    create_and_post_keyevent(hotkey.key, false);
+    synthesize_modifiers(&hotkey, false);
+    return true;
 }
 
 void synthesize_text(char *text)

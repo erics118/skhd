@@ -33,9 +33,7 @@ void *table_reset(struct table *table, int *count);
 #include <stdlib.h>
 #include <string.h>
 
-#define internal static
-
-internal struct bucket *
+static struct bucket *
 table_new_bucket(void *key, void *value)
 {
     struct bucket *bucket = malloc(sizeof(struct bucket));
@@ -45,7 +43,7 @@ table_new_bucket(void *key, void *value)
     return bucket;
 }
 
-internal struct bucket **
+static struct bucket **
 table_get_bucket(struct table *table, void *key)
 {
     struct bucket **bucket = table->buckets + (table->hash(key) % table->capacity);
@@ -57,8 +55,6 @@ table_get_bucket(struct table *table, void *key)
     }
     return bucket;
 }
-
-#undef internal
 
 void table_init(struct table *table, int capacity, table_hash_func hash, table_compare_func compare)
 {
@@ -92,17 +88,27 @@ void *table_find(struct table *table, void *key)
     return bucket ? bucket->value : NULL;
 }
 
-void table_add(struct table *table, void *key, void *value)
+void table_newkeyvalue(struct table *table, void *key, void *value, bool do_replace)
 {
     struct bucket **bucket = table_get_bucket(table, key);
     if (*bucket) {
-        if (!(*bucket)->value) {
+        if (do_replace || !(*bucket)->value) {
             (*bucket)->value = value;
         }
     } else {
         *bucket = table_new_bucket(key, value);
         ++table->count;
     }
+}
+
+void table_add(struct table *table, void *key, void *value)
+{
+    table_newkeyvalue(table, key, value, false);
+}
+
+void table_replace(struct table *table, void *key, void *value)
+{
+    table_newkeyvalue(table, key, value, true);
 }
 
 void *table_remove(struct table *table, void *key)

@@ -3,6 +3,7 @@
 #include "locale.h"
 #include "hotkey.h"
 #include "hashtable.h"
+#include "log.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -10,9 +11,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-#define internal static
-
-internal struct mode *
+static struct mode *
 find_or_init_default_mode(struct parser *parser)
 {
     struct mode *default_mode;
@@ -23,6 +22,7 @@ find_or_init_default_mode(struct parser *parser)
 
     default_mode = malloc(sizeof(struct mode));
     default_mode->name = copy_string("default");
+    default_mode->initialized = false;
 
     table_init(&default_mode->hotkey_map, 131,
                (table_hash_func) hash_hotkey,
@@ -35,7 +35,7 @@ find_or_init_default_mode(struct parser *parser)
     return default_mode;
 }
 
-internal char *
+static char *
 read_file(const char *file)
 {
     unsigned length;
@@ -55,16 +55,21 @@ read_file(const char *file)
     return buffer;
 }
 
-internal char *
-copy_string_count(char *s, int length)
-{
-    char *result = malloc(length + 1);
-    memcpy(result, s, length);
-    result[length] = '\0';
-    return result;
+static char *
+copy_string_count_nomalloc(char *dst, const char *s, int length) {
+    memcpy(dst, s, length);
+    dst[length] = '\0';
+    return dst;
 }
 
-internal uint32_t
+static char *
+copy_string_count(const char *s, int length)
+{
+    char *result = malloc(length + 1);
+    return copy_string_count_nomalloc(result, s, length);
+}
+
+static uint32_t
 keycode_from_hex(char *hex)
 {
     uint32_t result;
@@ -72,7 +77,7 @@ keycode_from_hex(char *hex)
     return result;
 }
 
-internal void
+static void
 parse_command(struct parser *parser, struct hotkey *hotkey)
 {
     struct token command = parser_previous(parser);
@@ -81,7 +86,7 @@ parse_command(struct parser *parser, struct hotkey *hotkey)
     buf_push(hotkey->command, result);
 }
 
-internal void
+static void
 parse_process_command_list(struct parser *parser, struct hotkey *hotkey)
 {
     if (parser_match(parser, Token_String)) {
@@ -120,7 +125,7 @@ parse_process_command_list(struct parser *parser, struct hotkey *hotkey)
     }
 }
 
-internal void
+static void
 parse_activate(struct parser *parser, struct hotkey *hotkey)
 {
     parse_command(parser, hotkey);
@@ -131,18 +136,46 @@ parse_activate(struct parser *parser, struct hotkey *hotkey)
     }
 }
 
-internal uint32_t
+static void
+parse_switch_mode(struct parser *parser, struct hotkey *hotkey)
+{
+    struct token identifier = parser_previous(parser);
+    char *name = copy_string_count(identifier.text, identifier.length);
+    struct mode *mode = table_find(parser->mode_map, name);
+    free(name);
+
+    if (!identifier.length) {
+        mode = table_find(parser->mode_map, "default");
+    }
+
+    if (!mode) {
+        parser_report_error(parser, identifier, "undeclared mode identifier\n");
+        return;
+    }
+
+    buf_push(hotkey->command, copy_string(mode->name));
+    hotkey->flags |= Hotkey_Flag_SwitchMode;
+
+    if (!parser_match(parser, Token_Command)) {
+        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command\n");
+        return;
+    }
+
+    parse_command(parser, hotkey);
+}
+
+static uint32_t
 parse_key_hex(struct parser *parser)
 {
     struct token key = parser_previous(parser);
-    char *hex = copy_string_count(key.text, key.length);
+    char hex[key.length+1];
+    copy_string_count_nomalloc(hex, key.text, key.length);
     uint32_t keycode = keycode_from_hex(hex);
-    free(hex);
     debug("\tkey: '%.*s' (0x%02x)\n", key.length, key.text, keycode);
     return keycode;
 }
 
-internal uint32_t
+static uint32_t
 parse_key(struct parser *parser)
 {
     uint32_t keycode;
@@ -154,7 +187,7 @@ parse_key(struct parser *parser)
 
 #define KEY_HAS_IMPLICIT_FN_MOD  4
 #define KEY_HAS_IMPLICIT_NX_MOD  35
-internal uint32_t literal_keycode_value[] =
+static uint32_t literal_keycode_value[] =
 {
     kVK_Return,     kVK_Tab,           kVK_Space,
     kVK_Delete,     kVK_Escape,        kVK_ForwardDelete,
@@ -175,7 +208,7 @@ internal uint32_t literal_keycode_value[] =
     NX_KEYTYPE_BRIGHTNESS_DOWN, NX_KEYTYPE_ILLUMINATION_UP, NX_KEYTYPE_ILLUMINATION_DOWN
 };
 
-internal inline void
+static inline void
 handle_implicit_literal_flags(struct hotkey *hotkey, int literal_index)
 {
     if ((literal_index > KEY_HAS_IMPLICIT_FN_MOD) &&
@@ -186,7 +219,7 @@ handle_implicit_literal_flags(struct hotkey *hotkey, int literal_index)
     }
 }
 
-internal void
+static void
 parse_key_literal(struct parser *parser, struct hotkey *hotkey)
 {
     struct token key = parser_previous(parser);
@@ -200,41 +233,85 @@ parse_key_literal(struct parser *parser, struct hotkey *hotkey)
     }
 }
 
-internal enum hotkey_flag modifier_flags_value[] =
+static enum hotkey_flag modifier_flags_value[] =
 {
     Hotkey_Flag_Alt,        Hotkey_Flag_LAlt,       Hotkey_Flag_RAlt,
     Hotkey_Flag_Shift,      Hotkey_Flag_LShift,     Hotkey_Flag_RShift,
     Hotkey_Flag_Cmd,        Hotkey_Flag_LCmd,       Hotkey_Flag_RCmd,
     Hotkey_Flag_Control,    Hotkey_Flag_LControl,   Hotkey_Flag_RControl,
-    Hotkey_Flag_Fn,         Hotkey_Flag_Hyper,      Hotkey_Flag_Meh,
+    Hotkey_Flag_Fn,
 };
 
-internal uint32_t
-parse_modifier(struct parser *parser)
+#define INVALID_KEY UINT32_MAX
+
+static void expand_alias(struct parser *parser, struct hotkey *dst, struct token alias, bool *contains_mod)
 {
-    struct token modifier = parser_previous(parser);
-    uint32_t flags = 0;
-
-    for (int i = 0; i < array_count(modifier_flags_str); ++i) {
-        if (token_equals(modifier, modifier_flags_str[i])) {
-            flags |= modifier_flags_value[i];
-            debug("\tmod: '%s'\n", modifier_flags_str[i]);
-            break;
-        }
+    if (parser->alias_map == NULL) {
+        // parser is in text mode (eg. `synthesize_key()`)
+        parser_report_error(parser, alias, "aliases not supported in this mode\n");
+        return;
     }
+    char alias_name[alias.length+1];
+    copy_string_count_nomalloc(alias_name, alias.text, alias.length);
 
-    if (parser_match(parser, Token_Plus)) {
-        if (parser_match(parser, Token_Modifier)) {
-            flags |= parse_modifier(parser);
-        } else {
-            parser_report_error(parser, parser_peek(parser), "expected modifier\n");
-        }
+    debug("\tuse_alias: $%s\n", alias_name);
+
+    struct hotkey *alias_hotkey = table_find(parser->alias_map, alias_name);
+    if (alias_hotkey == NULL) {
+        parser_report_error(parser, alias, "undefined alias $%s\n", alias_name);
+        return;
     }
-
-    return flags;
+    if (alias_hotkey->key != INVALID_KEY) {
+        // alias contains keycode
+        if (dst->key != INVALID_KEY) {
+            parser_report_error(parser, alias, "multiple keycodes specified by using alias $%s\n", alias_name);
+            return;
+        }
+        dst->key = alias_hotkey->key;
+    }
+    dst->flags |= alias_hotkey->flags;
+    if (contains_mod) *contains_mod = (alias_hotkey->flags & Hotkey_Flag_Modifier) != 0;
 }
 
-internal void
+static bool
+parse_modifier(struct parser *parser, struct hotkey *hotkey)
+{
+    bool first_iter = true;
+    do {
+        if (parser_match(parser, Token_Modifier)) {
+            struct token modifier = parser_previous(parser);
+
+            for (int i = 0; i < array_count(modifier_flags_str); ++i) {
+                if (token_equals(modifier, modifier_flags_str[i])) {
+                    hotkey->flags |= modifier_flags_value[i];
+                    debug("\tmod: '%s'\n", modifier_flags_str[i]);
+                    break;
+                }
+            }
+        } else if (parser_match(parser, Token_Alias)) {
+            // starts with an alias that might contain a modifier
+            struct token alias = parser_previous(parser);
+            bool contains_mod = false;
+            expand_alias(parser, hotkey, alias, &contains_mod);
+            if (parser->error) {
+                return false;
+            }
+
+            if (!contains_mod && !first_iter) {
+                parser_report_error(parser, alias, "alias $%.*s does not contain any modifiers\n", alias.length, alias.text);
+                return false;
+            }
+        } else {
+            if (!first_iter) parser_report_error(parser, parser_advance(parser), "expected modifier\n");
+            return false;
+        }
+
+        first_iter = false;
+    } while(parser_match(parser, Token_Plus));
+    return true;
+}
+
+static void
 parse_mode(struct parser *parser, struct hotkey *hotkey)
 {
     struct token identifier = parser_previous(parser);
@@ -262,12 +339,11 @@ parse_mode(struct parser *parser, struct hotkey *hotkey)
     }
 }
 
-internal struct hotkey *
+static struct hotkey *
 parse_hotkey(struct parser *parser)
 {
     struct hotkey *hotkey = malloc(sizeof(struct hotkey));
     memset(hotkey, 0, sizeof(struct hotkey));
-    bool found_modifier;
 
     debug("hotkey :: #%d {\n", parser->current_token.line);
 
@@ -287,30 +363,7 @@ parse_hotkey(struct parser *parser)
         buf_push(hotkey->mode_list, find_or_init_default_mode(parser));
     }
 
-    if ((found_modifier = parser_match(parser, Token_Modifier))) {
-        hotkey->flags = parse_modifier(parser);
-        if (parser->error) {
-            goto err;
-        }
-    }
-
-    if (found_modifier) {
-        if (!parser_match(parser, Token_Dash)) {
-            parser_report_error(parser, parser_peek(parser), "expected '-'\n");
-            goto err;
-        }
-    }
-
-    if (parser_match(parser, Token_Key)) {
-        hotkey->key = parse_key(parser);
-    } else if (parser_match(parser, Token_Key_Hex)) {
-        hotkey->key = parse_key_hex(parser);
-    } else if (parser_match(parser, Token_Literal)) {
-        parse_key_literal(parser, hotkey);
-    } else {
-        parser_report_error(parser, parser_peek(parser), "expected key-literal\n");
-        goto err;
-    }
+    parse_keypress(parser, hotkey, false);
 
     if (parser_match(parser, Token_Arrow)) {
         hotkey->flags |= Hotkey_Flag_Passthrough;
@@ -328,8 +381,13 @@ parse_hotkey(struct parser *parser)
         if (parser->error) {
             goto err;
         }
+    } else if (parser_match(parser, Token_SwitchMode)) {
+        parse_switch_mode(parser, hotkey);
+        if (parser->error) {
+            goto err;
+        }
     } else {
-        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command or ';' followed by mode\n");
+        parser_report_error(parser, parser_peek(parser), "expected ':' followed by command, '%' followed by mode and command, or ';' followed by mode\n");
         goto err;
     }
 
@@ -341,13 +399,14 @@ err:
     return NULL;
 }
 
-internal struct mode *
+static struct mode *
 parse_mode_decl(struct parser *parser)
 {
     struct mode *mode = malloc(sizeof(struct mode));
     struct token identifier = parser_previous(parser);
 
     mode->name = copy_string_count(identifier.text, identifier.length);
+    mode->initialized = true;
 
     table_init(&mode->hotkey_map, 131,
                (table_hash_func) hash_hotkey,
@@ -374,8 +433,20 @@ void parse_declaration(struct parser *parser)
     if (parser_match(parser, Token_Identifier)) {
         struct token identifier = parser_previous(parser);
         struct mode *mode = parse_mode_decl(parser);
-        if (table_find(parser->mode_map, mode->name)) {
-            parser_report_error(parser, identifier, "duplicate declaration '%s'\n", mode->name);
+
+        struct mode *existing_mode = table_find(parser->mode_map, mode->name);
+        if  (existing_mode) {
+            if (same_string(existing_mode->name, "default") && !existing_mode->initialized) {
+                existing_mode->initialized = true;
+                existing_mode->capture = mode->capture;
+                existing_mode->command = mode->command;
+            } else {
+                parser_report_error(parser, identifier, "duplicate declaration '%s'\n", mode->name);
+                if (mode->command) free(mode->command);
+            }
+
+            free(mode->name);
+            free(mode);
         } else {
             table_add(parser->mode_map, mode->name, mode);
         }
@@ -428,6 +499,20 @@ void parse_option_load(struct parser *parser, struct token option)
     }));
 }
 
+void parse_option_alias(struct parser *parser)
+{
+    struct token alias_token = parser_previous(parser);
+    char *alias_name = copy_string_count(alias_token.text, alias_token.length);
+    debug("\talias_name: $%s\n", alias_name);
+
+    struct hotkey *hotkey = malloc(sizeof(struct hotkey));
+    memset(hotkey, 0, sizeof(struct hotkey));
+    parse_keypress(parser, hotkey, true);
+
+    // later definition of the same alias takes predecence over previous ones.
+    table_replace(parser->alias_map, alias_name, hotkey);
+}
+
 void parse_option(struct parser *parser)
 {
     parser_match(parser, Token_Option);
@@ -448,6 +533,15 @@ void parse_option(struct parser *parser)
         } else {
             parser_report_error(parser, option, "expected filename\n");
         }
+    } else if (token_equals(option, "alias")) {
+        if (parser_match(parser, Token_Alias)) {
+            debug("alias :: #%d {\n", option.line);
+            parse_option_alias(parser);
+            debug("}\n");
+        } else {
+            parser_report_error(parser, option, "expected $alias_name\n");
+        }
+
     } else {
         parser_report_error(parser, option, "invalid option specified\n");
     }
@@ -465,7 +559,8 @@ bool parse_config(struct parser *parser)
             (parser_check(parser, Token_Modifier)) ||
             (parser_check(parser, Token_Literal)) ||
             (parser_check(parser, Token_Key_Hex)) ||
-            (parser_check(parser, Token_Key))) {
+            (parser_check(parser, Token_Key)) ||
+            (parser_check(parser, Token_Alias))) {
             if ((hotkey = parse_hotkey(parser))) {
                 for (int i = 0; i < buf_len(hotkey->mode_list); ++i) {
                     mode = hotkey->mode_list[i];
@@ -490,48 +585,57 @@ bool parse_config(struct parser *parser)
     return true;
 }
 
-struct hotkey *
-parse_keypress(struct parser *parser)
+bool
+parse_keypress(struct parser *parser, struct hotkey *hotkey, bool allow_no_keycode)
 {
-    if ((parser_check(parser, Token_Modifier)) ||
+    if (!((parser_check(parser, Token_Modifier)) ||
         (parser_check(parser, Token_Literal)) ||
         (parser_check(parser, Token_Key_Hex)) ||
-        (parser_check(parser, Token_Key))) {
-        struct hotkey *hotkey = malloc(sizeof(struct hotkey));
-        memset(hotkey, 0, sizeof(struct hotkey));
-        bool found_modifier;
-
-        if ((found_modifier = parser_match(parser, Token_Modifier))) {
-            hotkey->flags = parse_modifier(parser);
-            if (parser->error) {
-                goto err;
-            }
-        }
-
-        if (found_modifier) {
-            if (!parser_match(parser, Token_Dash)) {
-                goto err;
-            }
-        }
-
-        if (parser_match(parser, Token_Key)) {
-            hotkey->key = parse_key(parser);
-        } else if (parser_match(parser, Token_Key_Hex)) {
-            hotkey->key = parse_key_hex(parser);
-        } else if (parser_match(parser, Token_Literal)) {
-            parse_key_literal(parser, hotkey);
-        } else {
-            goto err;
-        }
-
-        return hotkey;
-
-    err:
-        free(hotkey);
-        return NULL;
+        (parser_check(parser, Token_Key)) ||
+        (parser_check(parser, Token_Alias)))) {
+        parser_report_error(parser, parser_peek(parser), "expected a hotkey\n");
+        return false;
     }
 
-    return NULL;
+    hotkey->key = INVALID_KEY; // keycode 0 is actually a valid keycode (kVK_ANSI_A)
+
+    bool found_modifier = parse_modifier(parser, hotkey);
+    if (parser->error) {
+        return false;
+    }
+
+    if (hotkey->key != INVALID_KEY) {
+        // found keycode within one of the aliases while parsing modifier.
+        // no need to look any further for keycode.
+        return true;
+    }
+
+    if (found_modifier) {
+        if (!parser_check(parser, Token_Dash)) {
+            if (allow_no_keycode) {
+                return true;
+            }
+            parser_report_error(parser, parser_peek(parser), "expected '-'\n");
+            return false;
+        }
+        parser_advance(parser);
+    }
+
+    if (parser_match(parser, Token_Key)) {
+        hotkey->key = parse_key(parser);
+    } else if (parser_match(parser, Token_Key_Hex)) {
+        hotkey->key = parse_key_hex(parser);
+    } else if (parser_match(parser, Token_Literal)) {
+        parse_key_literal(parser, hotkey);
+    } else if (parser_match(parser, Token_Alias)) {
+        struct token alias = parser_previous(parser);
+        expand_alias(parser, hotkey, alias, NULL);
+    } else {
+        parser_report_error(parser, parser_peek(parser), "expected key-literal\n");
+        return false;
+    }
+
+    return true;
 }
 
 struct token
@@ -596,7 +700,7 @@ void parser_do_directives(struct parser *parser, struct hotloader *hotloader, bo
         struct load_directive load = parser->load_directives[i];
 
         struct parser directive_parser;
-        if (parser_init(&directive_parser, parser->mode_map, parser->blacklst, load.file)) {
+        if (parser_init(&directive_parser, parser->mode_map, parser->blacklst, parser->alias_map, load.file)) {
             if (!thwart_hotloader) {
                 hotloader_add_file(hotloader, load.file);
             }
@@ -622,7 +726,7 @@ void parser_do_directives(struct parser *parser, struct hotloader *hotloader, bo
     }
 }
 
-bool parser_init(struct parser *parser, struct table *mode_map, struct table *blacklst, char *file)
+bool parser_init(struct parser *parser, struct table *mode_map, struct table *blacklst, struct table *alias_map, char *file)
 {
     memset(parser, 0, sizeof(struct parser));
     char *buffer = read_file(file);
@@ -630,6 +734,7 @@ bool parser_init(struct parser *parser, struct table *mode_map, struct table *bl
         parser->file     = file;
         parser->mode_map = mode_map;
         parser->blacklst = blacklst;
+        parser->alias_map = alias_map;
         tokenizer_init(&parser->tokenizer, buffer);
         parser_advance(parser);
         return true;

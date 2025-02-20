@@ -43,16 +43,11 @@ enum hotkey_flag
     Hotkey_Flag_LControl    = (1 << 10),
     Hotkey_Flag_RControl    = (1 << 11),
     Hotkey_Flag_Fn          = (1 << 12),
+    Hotkey_Flag_Modifier    = ((Hotkey_Flag_Fn << 1) - 1),
     Hotkey_Flag_Passthrough = (1 << 13),
     Hotkey_Flag_Activate    = (1 << 14),
     Hotkey_Flag_NX          = (1 << 15),
-    Hotkey_Flag_Hyper       = (Hotkey_Flag_Cmd |
-                               Hotkey_Flag_Alt |
-                               Hotkey_Flag_Shift |
-                               Hotkey_Flag_Control),
-    Hotkey_Flag_Meh         = (Hotkey_Flag_Control |
-                               Hotkey_Flag_Shift |
-                               Hotkey_Flag_Alt)
+    Hotkey_Flag_SwitchMode    = (1 << 16),
 };
 
 #include "hashtable.h"
@@ -64,6 +59,7 @@ struct mode
     char *name;
     char *command;
     bool capture;
+    bool initialized;
     struct table hotkey_map;
 };
 
@@ -77,28 +73,24 @@ struct hotkey
     struct mode **mode_list;
 };
 
-#define internal static
-
-internal inline void
+static inline void
 add_flags(struct hotkey *hotkey, uint32_t flag)
 {
     hotkey->flags |= flag;
 }
 
-internal inline bool
+static inline bool
 has_flags(struct hotkey *hotkey, uint32_t flag)
 {
     bool result = hotkey->flags & flag;
     return result;
 }
 
-internal inline void
+static inline void
 clear_flags(struct hotkey *hotkey, uint32_t flag)
 {
     hotkey->flags &= ~flag;
 }
-
-#undef internal
 
 bool compare_string(char *a, char *b);
 unsigned long hash_string(char *key);
@@ -112,6 +104,7 @@ bool intercept_systemkey(CGEventRef event, struct hotkey *eventkey);
 bool find_and_exec_hotkey(struct hotkey *k, struct table *t, struct mode **m, struct carbon_event *carbon);
 void free_mode_map(struct table *mode_map);
 void free_blacklist(struct table *blacklst);
+void free_alias_map(struct table *alias_map);
 
 void init_shell(void);
 
