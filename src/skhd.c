@@ -229,34 +229,6 @@ static MULTITOUCH_CALLBACK(touch_handler)
     return 0;
 }
 
-internal MULTITOUCH_CALLBACK(touch_handler)
-{
-    for (int i = 0; i < num_fingers; ++i) {
-        struct finger *finger = &data[i];
-        struct cached_finger_data cached_data = {
-            .id = finger->identifier,
-            .pos = {
-                .x = finger->normalized.pos.x,
-                .y = finger->normalized.pos.y
-            },
-            .pressure = finger->size
-        };
-
-        if (!cached_finger_data[finger->identifier]) {
-            printf("finger %d pressed\n", finger->identifier);
-        }
-        buf_push(cached_finger_data[finger->identifier], cached_data);
-
-        if (finger->size == 0.0f) {
-            printf("finger %d released\n", finger->identifier);
-            process_cached_finger_data(finger->identifier);
-            buf_free(cached_finger_data[finger->identifier]);
-            cached_finger_data[finger->identifier] = NULL;
-        }
-    }
-    return 0;
-}
-
 static void sigusr1_handler(int signal)
 {
     BEGIN_TIMED_BLOCK("sigusr1");
